@@ -4,8 +4,8 @@ import (
 	"flag"
 	"log"
 	"net/http"
-	// "strconv"
-	// "sync"
+	"strconv"
+	"sync"
 
 	"github.com/mindprince/gonvml"
 	"github.com/prometheus/client_golang/prometheus"
@@ -18,189 +18,142 @@ const (
 
 var (
 	addr = flag.String("web.listen-address", ":9445", "Address to listen on for web interface and telemetry.")
-	// metricsPath   = flag.String("web.telemetry-path", "/metrics", "Path under which to expose metrics.")
-	// labels = []string{"minor_number", "uuid", "name"}
+
+	labels = []string{"minor_number", "uuid", "name"}
 )
 
-	// var (
-	// 	listenAddress = flag.String("web.listen-address", ":9401", "Address to listen on for web interface and telemetry.")
-	// 	metricsPath   = flag.String("web.telemetry-path", "/metrics", "Path under which to expose metrics.")
-	// )
-	// flag.Parse()
 
-// type Collector struct {
-// 	sync.Mutex
-// 	numDevices  prometheus.Gauge
-// 	usedMemory  *prometheus.GaugeVec
-// 	totalMemory *prometheus.GaugeVec
-// 	dutyCycle   *prometheus.GaugeVec
-// 	powerUsage  *prometheus.GaugeVec
-// 	temperature *prometheus.GaugeVec
-// 	fanSpeed    *prometheus.GaugeVec
-// }
+var (
+	averageDuration = 10 * time.Second
+)
 
-// func NewCollector() *Collector {
-// 	return &Collector{
-// 		numDevices: prometheus.NewGauge(
-// 			prometheus.GaugeOpts{
-// 				Namespace: namespace,
-// 				Name:      "num_devices",
-// 				Help:      "Number of GPU devices",
-// 			},
-// 		),
-// 		usedMemory: prometheus.NewGaugeVec(
-// 			prometheus.GaugeOpts{
-// 				Namespace: namespace,
-// 				Name:      "memory_used_bytes",
-// 				Help:      "Memory used by the GPU device in bytes",
-// 			},
-// 			labels,
-// 		),
-// 		totalMemory: prometheus.NewGaugeVec(
-// 			prometheus.GaugeOpts{
-// 				Namespace: namespace,
-// 				Name:      "memory_total_bytes",
-// 				Help:      "Total memory of the GPU device in bytes",
-// 			},
-// 			labels,
-// 		),
-// 		dutyCycle: prometheus.NewGaugeVec(
-// 			prometheus.GaugeOpts{
-// 				Namespace: namespace,
-// 				Name:      "duty_cycle",
-// 				Help:      "Percent of time over the past sample period during which one or more kernels were executing on the GPU device",
-// 			},
-// 			labels,
-// 		),
-// 		powerUsage: prometheus.NewGaugeVec(
-// 			prometheus.GaugeOpts{
-// 				Namespace: namespace,
-// 				Name:      "power_usage_milliwatts",
-// 				Help:      "Power usage of the GPU device in milliwatts",
-// 			},
-// 			labels,
-// 		),
-// 		temperature: prometheus.NewGaugeVec(
-// 			prometheus.GaugeOpts{
-// 				Namespace: namespace,
-// 				Name:      "temperature_celsius",
-// 				Help:      "Temperature of the GPU device in celsius",
-// 			},
-// 			labels,
-// 		),
-// 		fanSpeed: prometheus.NewGaugeVec(
-// 			prometheus.GaugeOpts{
-// 				Namespace: namespace,
-// 				Name:      "fanspeed_percent",
-// 				Help:      "Fanspeed of the GPU device as a percent of its maximum",
-// 			},
-// 			labels,
-// 		),
-// 	}
-// }
+type Metrics struct {
+	Version string
+	Devices []*Device
+}
 
-// func (c *Collector) Describe(ch chan<- *prometheus.Desc) {
-// 	ch <- c.numDevices.Desc()
-// 	c.usedMemory.Describe(ch)
-// 	c.totalMemory.Describe(ch)
-// 	c.dutyCycle.Describe(ch)
-// 	c.powerUsage.Describe(ch)
-// 	c.temperature.Describe(ch)
-// 	c.fanSpeed.Describe(ch)
-// }
+type Device struct {
+	Index                 string
+	MinorNumber           string
+	Name                  string
+	UUID                  string
+	Temperature           float64
+	PowerUsage            float64
+	PowerUsageAverage     float64
+	FanSpeed              float64
+	MemoryTotal           float64
+	MemoryUsed            float64
+	UtilizationMemory     float64
+	UtilizationGPU        float64
+	UtilizationGPUAverage float64
+}
 
-// func (c *Collector) Collect(ch chan<- prometheus.Metric) {
-// 	// Only one Collect call in progress at a time.
-// 	c.Lock()
-// 	defer c.Unlock()
+func collectMetrics() (*Metrics, error) {
+	// if err := gonvml.Initialize(); err != nil {
+	// 	return nil, err
+	// }
+	// defer gonvml.Shutdown()
 
-// 	c.usedMemory.Reset()
-// 	c.totalMemory.Reset()
-// 	c.dutyCycle.Reset()
-// 	c.powerUsage.Reset()
-// 	c.temperature.Reset()
-// 	c.fanSpeed.Reset()
+	version, err := gonvml.SystemDriverVersion()
+	if err != nil {
+		return nil, err
+	}
 
-// 	numDevices, err := gonvml.DeviceCount()
-// 	if err != nil {
-// 		log.Printf("DeviceCount() error: %v", err)
-// 		return
-// 	} else {
-// 		c.numDevices.Set(float64(numDevices))
-// 		ch <- c.numDevices
-// 	}
+	metrics := &Metrics{
+		Version: version,
+	}
 
-// 	for i := 0; i < int(numDevices); i++ {
-// 		dev, err := gonvml.DeviceHandleByIndex(uint(i))
-// 		if err != nil {
-// 			log.Printf("DeviceHandleByIndex(%d) error: %v", i, err)
-// 			continue
-// 		}
+	numDevices, err := gonvml.DeviceCount()
+	if err != nil {
+		return nil, err
+	}
 
-// 		minorNumber, err := dev.MinorNumber()
-// 		if err != nil {
-// 			log.Printf("MinorNumber() error: %v", err)
-// 			continue
-// 		}
-// 		minor := strconv.Itoa(int(minorNumber))
+	for index := 0; index < int(numDevices); index++ {
+		device, err := gonvml.DeviceHandleByIndex(uint(index))
+		if err != nil {
+			return nil, err
+		}
 
-// 		uuid, err := dev.UUID()
-// 		if err != nil {
-// 			log.Printf("UUID() error: %v", err)
-// 			continue
-// 		}
+		uuid, err := device.UUID()
+		if err != nil {
+			return nil, err
+		}
 
-// 		name, err := dev.Name()
-// 		if err != nil {
-// 			log.Printf("Name() error: %v", err)
-// 			continue
-// 		}
+		name, err := device.Name()
+		if err != nil {
+			return nil, err
+		}
 
-// 		totalMemory, usedMemory, err := dev.MemoryInfo()
-// 		if err != nil {
-// 			log.Printf("MemoryInfo() error: %v", err)
-// 		} else {
-// 			c.usedMemory.WithLabelValues(minor, uuid, name).Set(float64(usedMemory))
-// 			c.totalMemory.WithLabelValues(minor, uuid, name).Set(float64(totalMemory))
-// 		}
+		minorNumber, err := device.MinorNumber()
+		if err != nil {
+			return nil, err
+		}
 
-// 		dutyCycle, _, err := dev.UtilizationRates()
-// 		if err != nil {
-// 			log.Printf("UtilizationRates() error: %v", err)
-// 		} else {
-// 			c.dutyCycle.WithLabelValues(minor, uuid, name).Set(float64(dutyCycle))
-// 		}
+		temperature, err := device.Temperature()
+		if err != nil {
+			return nil, err
+		}
 
-// 		powerUsage, err := dev.PowerUsage()
-// 		if err != nil {
-// 			log.Printf("PowerUsage() error: %v", err)
-// 		} else {
-// 			c.powerUsage.WithLabelValues(minor, uuid, name).Set(float64(powerUsage))
-// 		}
+		powerUsage, err := device.PowerUsage()
+		if err != nil {
+			return nil, err
+		}
 
-// 		temperature, err := dev.Temperature()
-// 		if err != nil {
-// 			log.Printf("Temperature() error: %v", err)
-// 		} else {
-// 			c.temperature.WithLabelValues(minor, uuid, name).Set(float64(temperature))
-// 		}
+		powerUsageAverage, err := device.AveragePowerUsage(averageDuration)
+		if err != nil {
+			return nil, err
+		}
 
-// 		fanSpeed, err := dev.FanSpeed()
-// 		if err != nil {
-// 			log.Printf("FanSpeed() error: %v", err)
-// 		} else {
-// 			c.fanSpeed.WithLabelValues(minor, uuid, name).Set(float64(fanSpeed))
-// 		}
-// 	}
-// 	c.usedMemory.Collect(ch)
-// 	c.totalMemory.Collect(ch)
-// 	c.dutyCycle.Collect(ch)
-// 	c.powerUsage.Collect(ch)
-// 	c.temperature.Collect(ch)
-// 	c.fanSpeed.Collect(ch)
-// }
+		fanSpeed, err := device.FanSpeed()
+		if err != nil {
+			return nil, err
+		}
 
-type Exporter struct {
+		memoryTotal, memoryUsed, err := device.MemoryInfo()
+		if err != nil {
+			return nil, err
+		}
+
+		utilizationGPU, utilizationMemory, err := device.UtilizationRates()
+		if err != nil {
+			return nil, err
+		}
+
+		utilizationGPUAverage, err := device.AverageGPUUtilization(averageDuration)
+		if err != nil {
+			return nil, err
+		}
+
+		metrics.Devices = append(metrics.Devices,
+			&Device{
+				Index:                 strconv.Itoa(index),
+				MinorNumber:           strconv.Itoa(int(minorNumber)),
+				Name:                  name,
+				UUID:                  uuid,
+				Temperature:           float64(temperature),
+				PowerUsage:            float64(powerUsage),
+				PowerUsageAverage:     float64(powerUsageAverage),
+				FanSpeed:              float64(fanSpeed),
+				MemoryTotal:           float64(memoryTotal),
+				MemoryUsed:            float64(memoryUsed),
+				UtilizationMemory:     float64(utilizationMemory),
+				UtilizationGPU:        float64(utilizationGPU),
+				UtilizationGPUAverage: float64(utilizationGPUAverage),
+			})
+	}
+
+	return metrics, nil
+}
+
+type Collector struct {
+	sync.Mutex
+	// numDevices  prometheus.Gauge
+	// usedMemory  *prometheus.GaugeVec
+	// totalMemory *prometheus.GaugeVec
+	// dutyCycle   *prometheus.GaugeVec
+	// powerUsage  *prometheus.GaugeVec
+	// temperature *prometheus.GaugeVec
+	// fanSpeed    *prometheus.GaugeVec
 	up                    prometheus.Gauge
 	info                  *prometheus.GaugeVec
 	deviceCount           prometheus.Gauge
@@ -216,8 +169,8 @@ type Exporter struct {
 	utilizationGPUAverage *prometheus.GaugeVec
 }
 
-func NewExporter() *Exporter {
-	return &Exporter{
+func NewCollector() *Collector {
+	return &Collector{
 		up: prometheus.NewGauge(
 			prometheus.GaugeOpts{
 				Namespace: namespace,
@@ -323,6 +276,120 @@ func NewExporter() *Exporter {
 	}
 }
 
+func (c *Collector) Describe(descs chan<- *prometheus.Desc) {
+	// ch <- c.numDevices.Desc()
+	// c.usedMemory.Describe(ch)
+	// c.totalMemory.Describe(ch)
+	// c.dutyCycle.Describe(ch)
+	// c.powerUsage.Describe(ch)
+	// c.temperature.Describe(ch)
+	// c.fanSpeed.Describe(ch)
+	c.deviceCount.Describe(descs)
+	c.deviceInfo.Describe(descs)
+	c.fanSpeed.Describe(descs)
+	c.info.Describe(descs)
+	c.memoryTotal.Describe(descs)
+	c.memoryUsed.Describe(descs)
+	c.powerUsage.Describe(descs)
+	c.powerUsageAverage.Describe(descs)
+	c.temperatures.Describe(descs)
+	c.up.Describe(descs)
+	c.utilizationGPU.Describe(descs)
+	c.utilizationGPUAverage.Describe(descs)
+	c.utilizationMemory.Describe(descs)
+}
+
+// func (c *Collector) Collect11(ch chan<- prometheus.Metric) {
+// 	// Only one Collect call in progress at a time.
+// 	c.Lock()
+// 	defer c.Unlock()
+
+// 	c.usedMemory.Reset()
+// 	c.totalMemory.Reset()
+// 	c.dutyCycle.Reset()
+// 	c.powerUsage.Reset()
+// 	c.temperature.Reset()
+// 	c.fanSpeed.Reset()
+
+// 	numDevices, err := gonvml.DeviceCount()
+// 	if err != nil {
+// 		log.Printf("DeviceCount() error: %v", err)
+// 		return
+// 	} else {
+// 		c.numDevices.Set(float64(numDevices))
+// 		ch <- c.numDevices
+// 	}
+
+// 	for i := 0; i < int(numDevices); i++ {
+// 		dev, err := gonvml.DeviceHandleByIndex(uint(i))
+// 		if err != nil {
+// 			log.Printf("DeviceHandleByIndex(%d) error: %v", i, err)
+// 			continue
+// 		}
+
+// 		minorNumber, err := dev.MinorNumber()
+// 		if err != nil {
+// 			log.Printf("MinorNumber() error: %v", err)
+// 			continue
+// 		}
+// 		minor := strconv.Itoa(int(minorNumber))
+
+// 		uuid, err := dev.UUID()
+// 		if err != nil {
+// 			log.Printf("UUID() error: %v", err)
+// 			continue
+// 		}
+
+// 		name, err := dev.Name()
+// 		if err != nil {
+// 			log.Printf("Name() error: %v", err)
+// 			continue
+// 		}
+
+// 		totalMemory, usedMemory, err := dev.MemoryInfo()
+// 		if err != nil {
+// 			log.Printf("MemoryInfo() error: %v", err)
+// 		} else {
+// 			c.usedMemory.WithLabelValues(minor, uuid, name).Set(float64(usedMemory))
+// 			c.totalMemory.WithLabelValues(minor, uuid, name).Set(float64(totalMemory))
+// 		}
+
+// 		dutyCycle, _, err := dev.UtilizationRates()
+// 		if err != nil {
+// 			log.Printf("UtilizationRates() error: %v", err)
+// 		} else {
+// 			c.dutyCycle.WithLabelValues(minor, uuid, name).Set(float64(dutyCycle))
+// 		}
+
+// 		powerUsage, err := dev.PowerUsage()
+// 		if err != nil {
+// 			log.Printf("PowerUsage() error: %v", err)
+// 		} else {
+// 			c.powerUsage.WithLabelValues(minor, uuid, name).Set(float64(powerUsage))
+// 		}
+
+// 		temperature, err := dev.Temperature()
+// 		if err != nil {
+// 			log.Printf("Temperature() error: %v", err)
+// 		} else {
+// 			c.temperature.WithLabelValues(minor, uuid, name).Set(float64(temperature))
+// 		}
+
+// 		fanSpeed, err := dev.FanSpeed()
+// 		if err != nil {
+// 			log.Printf("FanSpeed() error: %v", err)
+// 		} else {
+// 			c.fanSpeed.WithLabelValues(minor, uuid, name).Set(float64(fanSpeed))
+// 		}
+// 	}
+// 	c.usedMemory.Collect(ch)
+// 	c.totalMemory.Collect(ch)
+// 	c.dutyCycle.Collect(ch)
+// 	c.powerUsage.Collect(ch)
+// 	c.temperature.Collect(ch)
+// 	c.fanSpeed.Collect(ch)
+// }
+
 func (e *Exporter) Collect(metrics chan<- prometheus.Metric) {
 	data, err := collectMetrics()
 	if err != nil {
@@ -365,21 +432,6 @@ func (e *Exporter) Collect(metrics chan<- prometheus.Metric) {
 	e.utilizationMemory.Collect(metrics)
 }
 
-func (e *Exporter) Describe(descs chan<- *prometheus.Desc) {
-	e.deviceCount.Describe(descs)
-	e.deviceInfo.Describe(descs)
-	e.fanSpeed.Describe(descs)
-	e.info.Describe(descs)
-	e.memoryTotal.Describe(descs)
-	e.memoryUsed.Describe(descs)
-	e.powerUsage.Describe(descs)
-	e.powerUsageAverage.Describe(descs)
-	e.temperatures.Describe(descs)
-	e.up.Describe(descs)
-	e.utilizationGPU.Describe(descs)
-	e.utilizationGPUAverage.Describe(descs)
-	e.utilizationMemory.Describe(descs)
-}
 
 func main() {
 	flag.Parse()
@@ -395,32 +447,8 @@ func main() {
 		log.Printf("SystemDriverVersion(): %v", driverVersion)
 	}
 
-	// prometheus.MustRegister(NewCollector())
-	prometheus.MustRegister(NewExporter())
+	prometheus.MustRegister(NewCollector())
 
 	// Serve on all paths under addr
 	log.Fatalf("ListenAndServe error: %v", http.ListenAndServe(*addr, promhttp.Handler()))
 }
-
-
-
-// func main() {
-// 	flag.Parse()
-
-// 	// if err := gonvml.Initialize(); err != nil {
-// 	// 	log.Fatalf("Couldn't initialize gonvml: %v. Make sure NVML is in the shared library search path.", err)
-// 	// }
-// 	// defer gonvml.Shutdown()
-
-// 	if driverVersion, err := gonvml.SystemDriverVersion(); err != nil {
-// 		log.Printf("SystemDriverVersion() error: %v", err)
-// 	} else {
-// 		log.Printf("SystemDriverVersion(): %v", driverVersion)
-// 	}
-
-// 	// prometheus.MustRegister(NewCollector())
-// 	prometheus.MustRegister(NewExporter())
-
-// 	// Serve on all paths under addr
-// 	log.Fatalf("ListenAndServe error: %v", http.ListenAndServe(*addr, promhttp.Handler()))
-// }
