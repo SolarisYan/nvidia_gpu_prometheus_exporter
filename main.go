@@ -390,7 +390,7 @@ func (c *Collector) Describe(descs chan<- *prometheus.Desc) {
 // 	c.fanSpeed.Collect(ch)
 // }
 
-func (e *Exporter) Collect(metrics chan<- prometheus.Metric) {
+func (e *Collector) Collect(metrics chan<- prometheus.Metric) {
 	data, err := collectMetrics()
 	if err != nil {
 		log.Printf("Failed to collect metrics: %s\n", err)
