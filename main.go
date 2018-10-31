@@ -18,7 +18,7 @@ const (
 )
 
 var (
-	addr = flag.String("web.listen-address", ":9445", "Address to listen on for web interface and telemetry.")
+	addr = flag.String("web.listen-address", ":9401", "Address to listen on for web interface and telemetry.")
 
 	labels = []string{"minor_number", "uuid", "name"}
 )
@@ -450,6 +450,7 @@ func main() {
 
 	prometheus.MustRegister(NewCollector())
 
+	fmt.Println("Starting HTTP server on", *listenAddress)
 	// Serve on all paths under addr
 	log.Fatalf("ListenAndServe error: %v", http.ListenAndServe(*addr, promhttp.Handler()))
 }
