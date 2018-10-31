@@ -5,7 +5,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
-	"sync"
+	// "sync"
 
 	"github.com/mindprince/gonvml"
 	"github.com/prometheus/client_golang/prometheus"
