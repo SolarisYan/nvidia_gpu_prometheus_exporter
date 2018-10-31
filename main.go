@@ -384,10 +384,10 @@ func (e *Exporter) Describe(descs chan<- *prometheus.Desc) {
 func main() {
 	flag.Parse()
 
-	// if err := gonvml.Initialize(); err != nil {
-	// 	log.Fatalf("Couldn't initialize gonvml: %v. Make sure NVML is in the shared library search path.", err)
-	// }
-	// defer gonvml.Shutdown()
+	if err := gonvml.Initialize(); err != nil {
+		log.Fatalf("Couldn't initialize gonvml: %v. Make sure NVML is in the shared library search path.", err)
+	}
+	defer gonvml.Shutdown()
 
 	if driverVersion, err := gonvml.SystemDriverVersion(); err != nil {
 		log.Printf("SystemDriverVersion() error: %v", err)
@@ -401,3 +401,26 @@ func main() {
 	// Serve on all paths under addr
 	log.Fatalf("ListenAndServe error: %v", http.ListenAndServe(*addr, promhttp.Handler()))
 }
+
+
+
+// func main() {
+// 	flag.Parse()
+
+// 	// if err := gonvml.Initialize(); err != nil {
+// 	// 	log.Fatalf("Couldn't initialize gonvml: %v. Make sure NVML is in the shared library search path.", err)
+// 	// }
+// 	// defer gonvml.Shutdown()
+
+// 	if driverVersion, err := gonvml.SystemDriverVersion(); err != nil {
+// 		log.Printf("SystemDriverVersion() error: %v", err)
+// 	} else {
+// 		log.Printf("SystemDriverVersion(): %v", driverVersion)
+// 	}
+
+// 	// prometheus.MustRegister(NewCollector())
+// 	prometheus.MustRegister(NewExporter())
+
+// 	// Serve on all paths under addr
+// 	log.Fatalf("ListenAndServe error: %v", http.ListenAndServe(*addr, promhttp.Handler()))
+// }
