@@ -4,7 +4,7 @@ import (
 	"flag"
 	"log"
 	"net/http"
-	"strconv"
+	// "strconv"
 	// "sync"
 
 	"github.com/mindprince/gonvml"
