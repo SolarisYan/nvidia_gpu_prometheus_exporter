@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -450,7 +451,7 @@ func main() {
 
 	prometheus.MustRegister(NewCollector())
 
-	fmt.Println("Starting HTTP server on", *listenAddress)
+	fmt.Println("Starting HTTP server on", *addr)
 	// Serve on all paths under addr
 	log.Fatalf("ListenAndServe error: %v", http.ListenAndServe(*addr, promhttp.Handler()))
 }
