@@ -14,7 +14,7 @@ The repository includes `nvml.h`, so there are no special requirements from the
 build environment. `go get` should be able to build the exporter binary.
 
 ```
-go get github.com/mindprince/nvidia_gpu_prometheus_exporter
+go get github.com/SolarisYan/nvidia_gpu_prometheus_exporter
 ```
 
 ## Running

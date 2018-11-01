@@ -15,13 +15,13 @@ import (
 )
 
 const (
-	namespace = "nvidia_gpu"
+	// namespace = "nvidia_gpu"
+	namespace = "nvidia"
 )
 
 var (
 	addr = flag.String("web.listen-address", ":9401", "Address to listen on for web interface and telemetry.")
-
-	labels = []string{"minor_number", "uuid", "name"}
+	// labels = []string{"minor_number", "uuid", "name"}
 )
 
 
